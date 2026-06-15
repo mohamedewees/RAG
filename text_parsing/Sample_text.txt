@@ -1,0 +1,7 @@
+Retrieval-Augmented Generation (RAG) is a technique that combines information retrieval with text generation.
+
+It works by first retrieving relevant documents from a knowledge base. Then it passes those documents to a language model. The model uses them to generate a grounded answer.
+
+RAG is useful when the model needs up-to-date information. It reduces hallucinations by grounding responses in real documents. Many production AI systems use RAG today.
+
+The pipeline has several stages. First, documents are parsed and cleaned. Then they are split into chunks. Each chunk is embedded into a vector. Finally, vectors are stored in a database for retrieval.
