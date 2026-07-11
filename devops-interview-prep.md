@@ -133,7 +133,7 @@ A: This connects directly to your RAG project — good to bring up naturally if 
 
 ---
 
-3b. Infrastructure as Code (IaaC)
+## 3b. Infrastructure as Code (IaaC)
 
 Q: What is Infrastructure as Code, and why does it matter?
 A: Defining and provisioning infrastructure (servers, networks, load balancers, DNS, etc.) through machine-readable config files instead of manual console clicks. It matters because it makes infrastructure versioned, reviewable, repeatable, and testable — the same discipline you'd apply to application code, applied to infra.
