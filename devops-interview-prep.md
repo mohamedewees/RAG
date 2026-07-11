@@ -26,6 +26,34 @@ A: Bake compliance checks into the pipeline itself rather than as a manual gate 
 
 ---
 
+## 2a. Kubernetes Components Quick Reference
+
+**Control Plane (the "brain")**
+
+- **API Server** — the front door to the cluster. Every request (kubectl, controllers, kubelets) goes through it; validates and processes REST operations, then updates etcd.
+- **etcd** — the cluster's key-value store. Holds the entire cluster state (what should be running, current config) — the single source of truth.
+- **Scheduler** — decides which node a newly created Pod should run on, based on resource requests, affinity/anti-affinity rules, taints/tolerations, and available capacity.
+- **Controller Manager** — runs the control loops that keep actual state matching desired state (e.g., the Deployment controller ensures the right number of Pod replicas exist; the Node controller notices when a node goes down).
+- **Cloud Controller Manager** — talks to the underlying cloud provider (AWS/Azure/GCP) for things like provisioning load balancers or attaching storage volumes — keeps cloud-specific logic separate from core Kubernetes.
+
+**Node Components (run on every worker node)**
+
+- **Kubelet** — the agent on each node that talks to the API server, ensures containers described in Pod specs are actually running and healthy.
+- **Kube-proxy** — manages network rules on each node so traffic gets correctly routed to the right Pods, including load balancing across Pod replicas for a Service.
+- **Container Runtime** — the software that actually runs containers (containerd, CRI-O). Kubelet talks to it via the Container Runtime Interface (CRI).
+
+**Key Objects (what you actually work with day to day)**
+
+- **Pod** — smallest deployable unit; one or more containers that share network/storage.
+- **Deployment** — manages a ReplicaSet of stateless Pods, handles rolling updates/rollbacks.
+- **Service** — stable network endpoint (ClusterIP, NodePort, LoadBalancer) that routes traffic to a dynamic set of Pods.
+- **Ingress** — manages external HTTP/HTTPS access to Services, typically with host/path-based routing.
+- **ConfigMap / Secret** — inject configuration and sensitive values into Pods without baking them into images.
+- **Namespace** — logical partitioning of cluster resources, often used for multi-team or multi-environment isolation.
+- **PersistentVolume (PV) / PersistentVolumeClaim (PVC)** — decouples storage provisioning from Pod lifecycle for stateful workloads.
+
+---
+
 ## 2. Kubernetes
 
 **Q: Walk through what happens when you run `kubectl apply -f deployment.yaml`.**
@@ -50,6 +78,7 @@ A: Native Secrets are only base64-encoded, not encrypted, by default — so pair
 A: Depends on the goal — DR/failover (active-passive clusters with GitOps sync), data residency/compliance (region-pinned clusters), or vendor risk reduction. Mention tradeoffs: added complexity in networking, observability, and config drift management (tools like ArgoCD/Flux with multi-cluster targets help here). This maps well to your multi-cloud background — worth anchoring the answer in something you've actually built.
 
 ---
+
 
 ## 2b. Helm
 
