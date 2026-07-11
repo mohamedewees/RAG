@@ -51,6 +51,37 @@ A: Depends on the goal — DR/failover (active-passive clusters with GitOps sync
 
 ---
 
+## 2b. Helm
+
+**Q: What problem does Helm solve that raw Kubernetes manifests don't?**
+A: Helm packages a set of related Kubernetes manifests (Deployments, Services, ConfigMaps, etc.) into a single versioned unit called a chart, with templating so the same chart can be reused across environments by just changing values. Without it, you end up copy-pasting and hand-editing YAML per environment, which drifts and breaks fast.
+
+**Q: Walk through the core pieces of a Helm chart.**
+A: `Chart.yaml` (metadata: name, version, dependencies), `values.yaml` (default configuration), `templates/` (the Go-templated Kubernetes manifests), and optionally a `charts/` directory for subcharts/dependencies. `helm template` renders the final manifests locally without applying them — useful for review/debugging before deploy.
+
+**Q: How do you manage different configurations per environment (dev/staging/prod) with Helm?**
+A: Layered values files — a base `values.yaml` with defaults, then environment-specific overrides (`values-staging.yaml`, `values-prod.yaml`) passed with `-f` and merged on top. Keeps environment differences explicit and reviewable in Git rather than buried in manual overrides.
+
+**Q: What's the difference between `helm install`, `helm upgrade`, and `helm upgrade --install`?**
+A: `install` creates a new release and fails if it already exists; `upgrade` updates an existing release and fails if it doesn't exist; `upgrade --install` does either, which is what you typically want in CI/CD pipelines so the same command works on first deploy and every deploy after.
+
+**Q: How do you roll back a bad Helm release?**
+A: `helm rollback <release> <revision>` reverts to a previous known-good revision, since Helm keeps release history by default. Worth mentioning you'd pair this with `helm history` to confirm which revision to target, and that rollback should be tested as part of your deployment strategy, not discovered mid-incident.
+
+**Q: How do you handle secrets in Helm charts securely?**
+A: Never commit plaintext secrets into `values.yaml`. Options: reference existing Kubernetes Secrets created out-of-band (via External Secrets Operator or Vault), use `helm-secrets`/SOPS to encrypt values files in Git, or inject secrets at deploy time via the CI/CD pipeline's secret store rather than storing them in the chart at all.
+
+**Q: How does Helm fit into a GitOps workflow (e.g., with ArgoCD or Flux)?**
+A: The chart and its values files live in Git as the source of truth; the GitOps controller (ArgoCD/Flux) watches the repo and reconciles the cluster state to match — so `helm install/upgrade` isn't run manually or even directly by CI, it's driven by a Git commit. This gives you an audit trail and makes drift detection automatic, since the controller flags/corrects anything that diverges from Git.
+
+**Q: When would you build a Helm chart vs. use Kustomize, and how do the two compare?**
+A: Helm is better for packaging and distributing reusable, parameterized applications (especially third-party software you install via `helm install`) — templating logic lives in the chart. Kustomize is better for patching/overlaying existing plain YAML per environment without templating logic, and it's built into `kubectl`. Some teams use both together: Helm for third-party charts, Kustomize to patch them.
+
+**Q: What are Helm chart dependencies (subcharts) and when would you use them?**
+A: A chart can declare dependencies on other charts in `Chart.yaml` (e.g., an app chart depending on a Redis or PostgreSQL chart). Useful for composing a full application stack from one umbrella chart, though at scale many teams prefer managing shared infra (databases, message queues) separately from application charts to avoid tight coupling and lifecycle mismatches.
+
+---
+
 ## 3. CI/CD
 
 **Q: Design a CI/CD pipeline for a microservices app from scratch — what stages?**
