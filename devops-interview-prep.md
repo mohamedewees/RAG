@@ -133,6 +133,37 @@ A: This connects directly to your RAG project — good to bring up naturally if 
 
 ---
 
+3b. Infrastructure as Code (IaaC)
+
+Q: What is Infrastructure as Code, and why does it matter?
+A: Defining and provisioning infrastructure (servers, networks, load balancers, DNS, etc.) through machine-readable config files instead of manual console clicks. It matters because it makes infrastructure versioned, reviewable, repeatable, and testable — the same discipline you'd apply to application code, applied to infra.
+
+Q: What's the difference between declarative and imperative IaC, and which tools fall into each?
+A: Declarative: you describe the desired end state and the tool figures out how to get there (Terraform, CloudFormation, Kubernetes manifests). Imperative: you specify the exact steps to execute in order (Ansible playbooks are mostly imperative, though they have declarative elements; shell scripts are fully imperative). Declarative is generally preferred for infra because it's idempotent and easier to reason about drift.
+
+Q: What's the difference between configuration management tools (Ansible, Chef, Puppet) and provisioning tools (Terraform, CloudFormation)?
+A: Provisioning tools create the infrastructure itself (VMs, networks, storage, managed services). Configuration management tools install/configure software on that infrastructure once it exists (packages, users, file configs). In practice they're often combined: Terraform provisions the VM, Ansible configures what runs on it — though with containers/Kubernetes, configuration management's role has shrunk since images are built once and deployed immutably.
+
+Q: How do you manage Terraform state safely across a team?
+A: Remote state backend (S3, Azure Blob, GCS) instead of local state files, with state locking (DynamoDB for AWS, native locking for others) to prevent concurrent applies from corrupting state. Separate state files per environment/component to limit blast radius, and never commit state files to Git since they can contain sensitive data.
+
+Q: How do you structure a Terraform codebase for a large organization with multiple teams/environments?
+A: Modules for reusable components (VPC, EKS cluster, database) versioned and published internally, thin environment-specific root configs that call those modules with different variables, and remote state per environment. This keeps teams consistent on the "how" while letting each environment control its own "what" via variables.
+
+Q: What's your process for reviewing and applying IaC changes safely?
+A: terraform plan output reviewed in the PR (many teams post plan output as a PR comment automatically), require approval before apply, run apply through CI/CD rather than locally so it's auditable and consistent, and use policy-as-code (e.g., OPA/Sentinel/Checkov) to catch security or cost issues automatically before merge.
+
+Q: How do you handle IaC across multiple cloud providers?
+A: Terraform's provider model supports this natively — same workflow, different providers per cloud. The real challenge isn't syntax, it's designing modules that abstract cloud-specific differences (networking models, IAM concepts differ a lot between AWS/Azure/GCP) without over-abstracting to the point the module becomes unreadable. Worth mentioning your own multi-cloud experience directly here.
+
+Q: What's configuration drift, and how do you prevent or detect it?
+A: Drift is when the real infrastructure state diverges from what's defined in code — usually caused by manual "quick fix" changes made directly in the console. Prevent it by locking down console/manual access (least privilege, break-glass only), and detect it with scheduled terraform plan runs in CI or drift-detection tools that alert when actual state differs from code.
+
+Q: How do you test infrastructure code before it reaches production?
+A: Static analysis/linting (terraform validate, tflint), policy/security scanning (Checkov, tfsec), plan review as the primary gate, and for higher-risk modules, actually spinning up ephemeral test environments (e.g., via Terratest) to validate the infra behaves as expected before merging.
+
+---
+
 ## 4. Infrastructure Design
 
 **Q: How do you approach designing infrastructure for high availability?**
