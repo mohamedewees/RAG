@@ -52,7 +52,7 @@ def print_chunks(label,chunks):
 
 # 4. Main Function
 def main():
-    filepath = r'D:\programming\VS-Code_Workspace\RAG-Course\text_parsing\Sample_text.txt'
+    filepath = r'C:\Users\EweesM\OneDrive - Vodafone Group\Documents\programming\RAG\text_parsing\Sample_text.txt'
     
     # Step 1: Read the file
     text = read_file(filepath)
