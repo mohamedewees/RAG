@@ -1,8 +1,8 @@
 import re
 import hashlib
 from pathlib import Path
-
-
+ 
+ 
 SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
  
  
@@ -38,8 +38,8 @@ def chunk_text(text, chunk_size=500, overlap_sentences=1):
     Parameters
     ----------
     chunk_size : int
-        Maximum characters per chunk. This is now a HARD ceiling --
-        no chunk will exceed it, even for pathological input.
+        Maximum characters per chunk. This is a HARD ceiling -- no
+        chunk will exceed it, even for pathological input.
     overlap_sentences : int
         Number of pieces (sentences, or whole short paragraphs) to
         repeat at the start of the next chunk, for context continuity
@@ -70,13 +70,31 @@ def chunk_text(text, chunk_size=500, overlap_sentences=1):
             current_pieces = []
             current_length = 0
  
+    def add_piece(piece):
+        """
+        Add a single piece (a paragraph or a sentence), flushing first
+        if it wouldn't fit. Checks fit TWICE: once before flushing, and
+        once more after carrying the overlap forward -- if the carried
+        overlap alone is already close to chunk_size, a plain flush()
+        isn't enough on its own to make room, so we drop the overlap
+        for this one boundary rather than let the chunk grow past the
+        limit. Without this second check, a chunk could exceed
+        chunk_size by however long the carried-over overlap was.
+        """
+        nonlocal current_pieces, current_length
+ 
+        if current_pieces and current_length + len(piece) + 1 > chunk_size:
+            flush()
+            if current_pieces and current_length + len(piece) + 1 > chunk_size:
+                flush(carry_overlap=False)
+ 
+        current_pieces.append(piece)
+        current_length += len(piece) + 1
+ 
     for paragraph in paragraphs:
         if len(paragraph) <= chunk_size:
             # Small enough to potentially sit as one unbroken piece.
-            if current_length + len(paragraph) + 1 > chunk_size and current_pieces:
-                flush()
-            current_pieces.append(paragraph)
-            current_length += len(paragraph) + 1
+            add_piece(paragraph)
             continue
  
         # Paragraph is too big to add as one piece -- split into sentences.
@@ -89,15 +107,13 @@ def chunk_text(text, chunk_size=500, overlap_sentences=1):
                 chunks.extend(_hard_split(sentence, chunk_size, overlap=50))
                 continue
  
-            if current_length + len(sentence) + 1 > chunk_size and current_pieces:
-                flush()
-            current_pieces.append(sentence)
-            current_length += len(sentence) + 1
+            add_piece(sentence)
  
     flush(carry_overlap=False)  # emit whatever's left, nothing to carry into
  
     return chunks
-
+ 
+ 
 def generate_document_id(file_path):
     """
     Create a short, stable ID for a document based on its path.
@@ -134,9 +150,16 @@ def get_document_metadata(file_path, text):
     }
  
  
-def chunk_document(file_path,text, chunk_size=200, overlap=50, respect_sentences=True):
+def chunk_document(file_path, text, chunk_size=200, overlap=1):
     """
     Read a document, chunk it, and attach metadata to every chunk.
+ 
+    Note: `overlap` means "number of sentences repeated between chunks,"
+    not characters -- a holdover name from an earlier character-based
+    version of this chunker. A large value (e.g. 50) will cause most of
+    one chunk to repeat verbatim at the start of the next one, since
+    it's asking to carry over 50 whole sentences, not 50 characters.
+    1-2 is normally plenty.
  
     Returns a list of dictionaries instead of plain strings, e.g.:
  
@@ -162,10 +185,9 @@ def chunk_document(file_path,text, chunk_size=200, overlap=50, respect_sentences
     database primary key once you're storing chunks from many documents
     together and need every chunk to have its own unique identifier.
     """
-    # text = read_document(file_path)
     doc_metadata = get_document_metadata(file_path, text)
  
-    chunks = chunk_text(text)
+    chunks = chunk_text(text, chunk_size=chunk_size, overlap_sentences=overlap)
  
     chunk_records = []
     for i, chunk in enumerate(chunks):
