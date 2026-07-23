@@ -77,6 +77,16 @@ def read_document(file_path):
         text = read_dox(file_path)
     else:
         raise ValueError(f"Unsupported file type: {extension}")
+    
+    if extension == ".md":
+        # Markdown is whitespace-sensitive: code blocks and nested lists
+        # rely on exact indentation to mean what they mean. Collapsing
+        # repeated spaces (the way we do for prose below) would flatten
+        # a 4-space-indented code block and turn nested bullets into
+        # siblings -- silently corrupting the document's structure. So
+        # for markdown we skip that step and only trim outer whitespace.
+        return text.strip()
+
     # clean up messy whitespace so chunking works on tidy text
     text = re.sub(r"[ \t]+"," ", text)   # Collapse repeated spaces/tabs
     text = re.sub(r"\n{3,}","\n\n", text)  # collapse 3+ blank lines to 1
