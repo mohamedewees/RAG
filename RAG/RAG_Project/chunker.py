@@ -11,27 +11,127 @@ def split_into_sentences(paragraph):
     return [s.strip() for s in SENTENCE_PATTERN.split(paragraph) if s.strip()]
  
  
+# def _hard_split(text, max_len, overlap=50):
+#     """
+#     Safety-net splitter: force-splits a piece of text that's too long to
+#     fit in a chunk on its own, using a plain character sliding window
+#     (no sentence-awareness -- by the time we get here, sentence-awareness
+#     has already failed to produce something small enough).
+#     """
+#     pieces = []
+#     start = 0
+#     while start < len(text):
+#         end = min(start + max_len, len(text))
+#         piece = text[start:end].strip()
+#         if piece:
+#             pieces.append(piece)
+#         if end >= len(text):
+#             break
+#         start = end - overlap
+#     return pieces
+ 
+
+#####DeepSeek modifications######
+
+# chunker.py
+
 def _hard_split(text, max_len, overlap=50):
     """
     Safety-net splitter: force-splits a piece of text that's too long to
-    fit in a chunk on its own, using a plain character sliding window
-    (no sentence-awareness -- by the time we get here, sentence-awareness
-    has already failed to produce something small enough).
+    fit in a chunk on its own, using word-aware boundaries.
     """
     pieces = []
     start = 0
+    
     while start < len(text):
+        # Calculate the initial end point
         end = min(start + max_len, len(text))
+        
+        # If we're at the end of the text, just take the rest
+        if end >= len(text):
+            piece = text[start:].strip()
+            if piece:
+                pieces.append(piece)
+            break
+        
+        # Try to find a good breaking point
+        # Priority order: 1) punctuation with space, 2) space, 3) punctuation without space
+        break_found = False
+        
+        # First, try to break at a sentence boundary (. ! ? followed by space or newline)
+        for char in '.!?':
+            # Look for the last occurrence of char followed by space within our range
+            pos = text.rfind(char + ' ', start, end)
+            if pos > start and pos < end:
+                end = pos + 2  # Include the period and space
+                break_found = True
+                break
+        
+        # If no sentence boundary, try to break at a space
+        if not break_found:
+            last_space = text.rfind(' ', start, end)
+            if last_space > start and last_space < end:
+                end = last_space + 1  # Include the space
+                break_found = True
+        
+        # If no space found, try to break at punctuation without space
+        if not break_found:
+            for char in ',;:)]}':
+                pos = text.rfind(char, start, end)
+                if pos > start and pos < end:
+                    end = pos + 1
+                    break_found = True
+                    break
+        
+        # If we still can't find a good break, just cut at the limit
+        if not break_found:
+            end = min(start + max_len, len(text))
+        
+        # Extract the piece
         piece = text[start:end].strip()
         if piece:
             pieces.append(piece)
+        
+        # Calculate the next start position with overlap
         if end >= len(text):
             break
-        start = end - overlap
+        
+        # Move back by overlap, ensuring we don't break words
+        new_start = max(start, end - overlap)
+        
+        # Try to align new_start to a word boundary
+        while new_start > start and new_start < end:
+            if text[new_start] == ' ':
+                break
+            # If we can't find a space, try punctuation
+            if text[new_start] in '.,;:!?)]}':
+                new_start += 1  # Include the punctuation
+                break
+            new_start -= 1
+        
+        # If the piece we just cut was too short to have room for a full
+        # overlap (new_start walked all the way back down to start), we
+        # can't back up any further -- there's nothing behind `start` to
+        # overlap with. The ORIGINAL bug here was `new_start = end - overlap`,
+        # which goes negative whenever the piece is shorter than `overlap`
+        # characters (very possible right after a short sentence). A
+        # negative start is then read by Python as counting from the END
+        # of the string, producing a nonsensical/empty slice -- and worse,
+        # start never advances again, so the loop never terminates and
+        # hangs forever. The fix: fall back to `end`, not `end - overlap`.
+        # This just means no overlap for this one boundary (a small
+        # quality tradeoff), which is far better than an infinite loop or
+        # silently dropped content.
+        if new_start <= start:
+            new_start = end
+        
+        start = new_start
+    
     return pieces
+
+#################################
  
- 
-def chunk_text(text, chunk_size=500, overlap_sentences=1):
+def chunk_text(text, chunk_size=600, overlap_sentences=1):
     """
     Paragraph-aware, sentence-aware chunking with a guaranteed max size.
  
@@ -86,7 +186,13 @@ def chunk_text(text, chunk_size=500, overlap_sentences=1):
         if current_pieces and current_length + len(piece) + 1 > chunk_size:
             flush()
             if current_pieces and current_length + len(piece) + 1 > chunk_size:
-                flush(carry_overlap=False)
+                # Carried-over overlap alone still doesn't leave room.
+                # Drop it silently -- do NOT flush it again here, since
+                # that content is already fully present as the tail of
+                # the chunk emitted by flush() just above. Re-flushing
+                # it would push a near-duplicate copy into `chunks`.
+                current_pieces = []
+                current_length = 0
  
         current_pieces.append(piece)
         current_length += len(piece) + 1
@@ -127,8 +233,18 @@ def generate_document_id(file_path):
     """
     absolute_path = str(Path(file_path).resolve())
     return hashlib.md5(absolute_path.encode()).hexdigest()[:12]  # 12 chars is plenty
- 
- 
+
+
+def generate_content_hash(file_path):
+    """Return a stable fingerprint of a file's bytes.
+
+    Unlike ``document_id``, this deliberately ignores the path.  It lets the
+    ingestion layer recognise that a copied or moved file is the same document
+    and replace its old chunks instead of indexing it a second time.
+    """
+    return hashlib.sha256(Path(file_path).read_bytes()).hexdigest()
+
+
 def get_document_metadata(file_path, text):
     """
     Build a metadata dictionary describing a document.
@@ -141,6 +257,7 @@ def get_document_metadata(file_path, text):
  
     return {
         "document_id": generate_document_id(file_path),
+        "content_hash": generate_content_hash(file_path),
         "filename": path.name,
         "file_path": str(path.resolve()),
         "file_extension": path.suffix.lower(),
@@ -150,7 +267,7 @@ def get_document_metadata(file_path, text):
     }
  
  
-def chunk_document(file_path, text, chunk_size=200, overlap=1):
+def chunk_document(file_path, text, chunk_size=600, overlap=1):
     """
     Read a document, chunk it, and attach metadata to every chunk.
  

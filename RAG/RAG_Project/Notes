@@ -1,0 +1,38 @@
+ok if I used qwen3-v1:8b, can I use it also in the future as the LLM model that will be connected to the RAG model and provide answer grounded to the company documentation ?
+
+
+Evaluated model's viability for RAG generation and trade-offs
+
+Yes — that works, and it's actually a very common pattern: one local model serving double duty, since vision-language models like Qwen3-VL are still full general-purpose LLMs underneath. The vision encoder is additive, not a replacement — when you send it a text-only prompt (no image), it just behaves like a regular chat model. So using qwen3-vl:8b both to caption diagrams during ingestion and to generate grounded answers at query time is a completely standard, sensible design.
+How it would fit into your pipeline
+
+At query time, the flow becomes: retrieve top-N relevant chunks (via embedder.py/retriever.py, still ahead of us) → build a prompt like "Answer the question using only the context below. If the answer isn't in the context, say so." → send that as a text-only call to the same Ollama endpoint, just without the images field this time. No new infrastructure needed — same model, same localhost:11434, just a different call shape.
+One thing worth weighing, though — same model isn't always the optimal choice, even though it works
+
+Image captioning and answer generation have different usage patterns:
+
+    Captioning happens once per document, at ingestion time — a one-time cost you can afford to spend more time/quality on.
+    Generation happens on every single query — this is the part your end users actually wait on, so latency matters far more here.
+
+Given you're on CPU-only, an 8B model responding to a live question might take a noticeably long time per answer (tens of seconds, possibly more depending on answer length) — tolerable for a one-off background captioning job, but potentially frustrating if someone's sitting there waiting for a chat response. So it's worth keeping in mind that "one model for everything" is the simplest setup, not necessarily the fastest one. If responsiveness ends up mattering more than you expect once you're actually using this day to day, a reasonable evolution later would be: qwen3-vl:8b for captioning (quality matters, no rush) + a smaller, faster text-only model like qwen3:4b for the actual chat/generation step. Not something to solve now — just worth knowing it's an easy lever to pull later if the single-model setup feels slow in practice.
+
+
+RAG Pipeline:
+embedding vs vectorDB:
+
+
+Embedding = the transformation: text in, numeric vector out. It's a computation you run.
+
+VectorDB = the storage: a place to put those vectors (plus their original text and metadata) so they persist on disk, and so you can search them later without recomputing anything.
+
+One small refinement worth adding to your mental model: it's really a three-step pipeline, and each step exists to avoid redoing the one before it:
+
+Parse + Chunk (parser.py + chunker.py) — expensive-ish, but only needs to happen once per document, ever (unless the document changes)
+Embed (embedder.py) — also only needs to happen once per chunk, ever — that's the part your vectordb insight is really about avoiding repetition of
+Store (vectordb.py) — makes step 2's output durable, so step 2 never has to run again for that chunk
+
+Without the vector DB, every single time you wanted to ask a question, you'd have to: re-read every file from disk → re-chunk it → re-embed every chunk → then finally search. That's wasteful and slow, especially as your document collection grows into the hundreds or thousands of files. With the vector DB, steps 1 and 2 become one-time ingestion costs — and answering a question becomes just: embed the query (one small, fast embedding call) → search the already-stored vectors → done.
+
+So a slightly more precise version of your sentence:
+
+Embedding converts chunks into numeric vectors. The vector DB persists those vectors (along with the original text and metadata) so that parsing, chunking, and embedding never need to happen again for a document that's already been processed — only the new query needs to be embedded each time.
