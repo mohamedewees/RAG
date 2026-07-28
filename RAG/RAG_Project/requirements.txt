@@ -1,0 +1,9 @@
+chromadb
+sentence-transformers
+numpy
+pypdf
+python-docx
+pytesseract
+Pillow
+requests
+streamlit
